@@ -1,0 +1,115 @@
+---
+- name: Configure Samba Server
+  hosts: samba
+  become: yes
+
+  tasks:
+    - name: Install Samba packages
+      yum:
+        name:
+          - samba
+          - samba-common
+          - samba-client
+        state: present
+
+    - name: Create Samba shared directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        recurse: yes
+        mode: '0777'
+      loop:
+        - /sambashare/secure
+        - /sambashare/open
+
+    - name: Create a test file in the open directory
+      command: touch /sambashare/open/test_file
+
+    - name: Configure Samba
+      lineinfile:
+        path: /etc/samba/smb.conf
+        line: "{{ item }}"
+      loop:
+        - "[sambashare]"
+        - "comment = Samba share"
+        - "path = /sambashare/open"
+        - "writable = yes"
+        - "guest ok = yes"
+        - "guest only = yes"
+        - "public = yes"
+      notify:
+        - Restart Samba
+
+    - name: Add 'map to guest' in smb.conf
+      lineinfile:
+        path: /etc/samba/smb.conf
+        line: "map to guest = Bad User"
+        insertafter: "^security = user"
+      notify:
+        - Restart Samba
+
+    - name: Create a Samba user and set a password
+      command: smbpasswd -a admin
+      ignore_errors: yes
+
+    - name: Configure Samba shares
+      lineinfile:
+        path: /etc/samba/smb.conf
+        line: "{{ item }}"
+      loop:
+        - "[secure]"
+        - "comment = Samba share"
+        - "path = /sambashare/secure"
+        - "valid users = admin"
+        - "writable = yes"
+        - "guest ok = no"
+        - "browseable = yes"
+      notify:
+        - Restart Samba
+
+    - name: Disable SELinux
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Configure SELinux context for Samba share
+      command: semanage fcontext -a -t samba_share_t "/sambashare(/.*)?"
+      ignore_errors: yes
+
+    - name: Apply SELinux context changes
+      command: restorecon -R -v /sambashare
+      ignore_errors: yes
+
+    - name: Configure firewall for Samba
+      command: >
+        firewall-cmd --permanent --add-service=samba
+      notify:
+        - Reload Firewall
+
+    - name: Start and enable Samba services
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - smb
+        - nmb
+      notify:
+        - Reload Samba Services
+
+  handlers:
+    - name: Restart Samba
+      service:
+        name: smb
+        state: restarted
+
+    - name: Reload Firewall
+      command: firewall-cmd --reload
+
+    - name: Reload Samba Services
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - smb
+        - nmb
+

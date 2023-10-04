@@ -1,0 +1,180 @@
+---
+- name: Install and Configure Nagios
+  hosts: nagios
+  become: yes
+
+  tasks:
+    - name: Install required packages
+      yum:
+        name:
+          - gcc
+          - glibc
+          - glibc-common
+          - gd
+          - gd-devel
+          - make
+          - net-snmp
+          - openssl-devel
+          - httpd
+          - php
+          - unzip
+          - wget
+          - postfix
+          - perl
+        state: latest
+
+    - name: Download and extract Nagios source
+      get_url:
+        url: https://github.com/NagiosEnterprises/nagioscore/archive/nagios-4.4.5.tar.gz
+        dest: /tmp/
+
+    - name: Extract Nagios Core
+      ansible.builtin.unarchive:
+        src: /tmp/nagioscore.tar.gz  # Replace with the actual path to your Nagios archive
+        dest: /tmp/  # Replace with the destination directory where you want to extract the files
+        remote_src: yes  # Use 'yes' if the source file is on the remote host
+      register: extract_result
+
+    - name: Configure and build Nagios
+      command: ./configure
+      args:
+        chdir: /tmp/nagioscore-nagios-4.4.5
+
+    - name: Make all for Nagios
+      ansible.builtin.command: make all
+      args:
+        chdir: /tmp/nagioscore-nagios-4.4.5
+
+    - name: Make install-groups-users for Nagios
+      ansible.builtin.shell: make install-groups-users
+      args:
+        chdir: /tmp/nagioscore-nagios-4.4.5
+
+    - name: Add apache user to nagios group
+      command: usermod -aG nagios apache
+
+    - name: Make install for Nagios
+      ansible.builtin.command: make install
+      args:
+        chdir: /tmp/nagioscore-nagios-4.4.5
+
+    - name: Make install-daemoninit for Nagios
+      ansible.builtin.command: make install-daemoninit
+      args:
+        chdir: /tmp/nagioscore-nagios-4.4.5
+
+    - name: Enable httpd service
+      systemd:
+        name: httpd
+        enabled: yes
+
+    - name: Make install-commandmode for Nagios
+      ansible.builtin.command: make install-commandmode
+      args:
+        chdir: /tmp/nagioscore-nagios-4.4.5
+
+    - name: Make install-config for Nagios
+      ansible.builtin.command: make install-config
+      args:
+        chdir: /tmp/nagioscore-nagios-4.4.5
+
+    - name: Make install-webconf for Nagios
+      ansible.builtin.command: make install-webconf
+      args:
+        chdir: /tmp/nagioscore-nagios-4.4.5
+
+    - name: Download and extract Nagios plugins
+      get_url:
+        url: http://nagios-plugins.org/download/nagios-plugins-2.3.2.tar.gz
+        dest: /root
+
+    - name: Extract Nagios plugins
+      ansible.builtin.unarchive:
+        src: /root/nagios-plugins-2.3.2.tar.gz  # Replace with the actual path to your Nagios archive
+        dest: /root  # Replace with the destination directory where you want to extract the files
+        remote_src: yes  # Use 'yes' if the source file is on the remote host
+      register: extract_result
+
+    - name: Configure Nagios plugins
+      command: ./configure
+      args:
+        chdir: /root/nagios-plugins-2.3.2
+
+    - name: Make all for Nagios plugins
+      ansible.builtin.command: make
+      args:
+        chdir: /root/nagios-plugins-2.3.2
+
+    - name: Make install for Nagios plugins
+      ansible.builtin.command: make install
+      args:
+        chdir: /root/nagios-plugins-2.3.2
+
+    - name: Uncomment cfg_dir line in nagios.cfg
+      ansible.builtin.lineinfile:
+        path: /usr/local/nagios/etc/nagios.cfg
+        regexp: '^#?(cfg_dir=/usr/local/nagios/etc/servers)'
+        line: 'cfg_dir=/usr/local/nagios/etc/servers'
+      register: line_result
+
+    - name: Create servers directory
+      file:
+        path: /usr/local/nagios/etc/servers
+        state: directory
+
+    - name: Update contacts.cfg file
+      lineinfile:
+        path: /usr/local/nagios/etc/objects/contacts.cfg
+        regexp: '^    email'
+        line: '    email                           nagios@ziyotek.com'
+      register: line_result
+
+    - name: Create htpasswd.users for Nagios admin
+      command: htpasswd -bc /usr/local/nagios/etc/htpasswd.users nagiosadmin password
+
+    - name: Restart httpd service
+      systemd:
+        name: httpd
+        enabled: yes
+        state: restarted
+
+    - name: Verify Nagios configuration
+      ansible.builtin.command: /usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
+      args:
+        chdir: /usr/local/nagios/etc
+
+    - name: Start and enable Nagios service
+      systemd:
+        name: nagios
+        enabled: yes
+        state: started
+
+    - name: Disable SELinux temporarily (until next reboot)
+      selinux:
+        policy: targeted
+        state: disabled
+
+    - name: Set SELinux state to permissive in the current session
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Allow HTTP (Port 80) traffic
+      firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+
+    - name: Allow HTTPS (Port 443) traffic
+      firewalld:
+        service: https
+        permanent: yes
+        state: enabled
+
+    - name: Reload firewall rules
+      command: firewall-cmd --reload
+
+    - name: Restart  Apache Service
+      systemd:
+        name: httpd
+        state: restarted
+

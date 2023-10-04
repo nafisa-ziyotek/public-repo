@@ -1,0 +1,53 @@
+---
+- name: Install and configure phpLDAPadmin
+  hosts: ldap  # Replace with the hostname or IP address of your LDAP server
+  become: yes
+  tasks:
+    - name: Install epel-release
+      yum:
+        name: epel-release
+        state: present
+
+    - name: Install phpldapadmin and httpd
+      yum:
+        name:
+          - phpldapadmin
+          - httpd
+        state: present
+
+    - name: Configure phpLDAPadmin
+      copy:
+        src: config.php.j2
+        dest: /etc/phpldapadmin/config.php
+        owner: root
+        group: root
+        mode: '0644'
+      become: yes
+
+    - name: Configure httpd for phpLDAPadmin
+      blockinfile:
+        path: /etc/httpd/conf.d/phpldapadmin.conf
+        block: |
+              Require ip 192.168.0.0/24 
+        insertafter: "Require local"
+
+    - name: Restart httpd service
+      systemd:
+        name: httpd
+        state: restarted
+        enabled: yes
+
+    - name: Allow HTTP (Port 80) traffic
+      firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+
+    - name: Allow HTTPS (Port 443) traffic
+      firewalld:
+        service: https
+        permanent: yes
+        state: enabled
+
+    - name: Reload firewall rules
+      command: firewall-cmd --reload

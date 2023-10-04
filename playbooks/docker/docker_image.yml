@@ -1,0 +1,32 @@
+---
+- name: Build Docker Image
+  hosts: manager
+  become: true
+
+  tasks:
+    - name: Create Dockerfile
+      copy:
+        src: Dockerfile.j2
+        dest: /root/Dockerfile
+
+    - name: Build Docker Image
+      command: docker build -t myapp_image /root/
+
+    - name: Install httpd
+      yum:
+        name: httpd
+        state: latest
+
+    - name: Enable and Start httpd
+      systemd:
+        name: httpd
+        enabled: yes
+        state: started
+
+    - name: Create Docker Service
+      command: >
+        docker service create --name myapp --replicas 3 -p 80:80 myapp_image
+      args:
+        executable: /bin/bash
+      changed_when: false  # Running a command doesn't change state
+

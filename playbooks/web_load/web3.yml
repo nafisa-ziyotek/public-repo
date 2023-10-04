@@ -1,0 +1,46 @@
+---
+- name: Install and Configure Web Server
+  hosts: web3
+  become: yes
+
+  tasks:
+    - name: Install Apache HTTPD
+      yum:
+        name: httpd
+        state: latest
+
+    - name: Start and Enable Apache Service
+      systemd:
+        name: httpd
+        enabled: yes
+        state: started
+
+    - name: Create index.html File
+      copy:
+        src: "web3.html.j2"
+        dest: /var/www/html/index.html
+
+    - name: Disable SELinux temporarily (until next reboot)
+      selinux:
+        policy: targeted
+        state: disabled
+
+    - name: Set SELinux state to permissive in the current session
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Allow HTTP (Port 80) traffic
+      firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+
+    - name: Allow HTTPS (Port 443) traffic
+      firewalld:
+        service: https
+        permanent: yes
+        state: enabled
+
+    - name: Reload firewall rules
+      command: firewall-cmd --reload
+

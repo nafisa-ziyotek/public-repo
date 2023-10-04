@@ -1,0 +1,90 @@
+---
+- name: Install and Configure MariaDB 
+  hosts: 192.168.0.22
+  become: yes  # This enables running tasks as a superuser (usually root)
+
+  tasks:
+    - name: Install MariaDB Server
+      yum:
+        name: mariadb-server
+        state: present
+
+    - name: Start MariaDB Service
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+   
+    - name: Install MySQL Python library on the target machine
+      yum:
+        name: python2-PyMySQL  # On some systems, it's called python-pymysql
+        state: present
+      become: yes  # Ensure you have appropriate privileges to install packages
+
+
+    - name: Install MariaDB Server and Client packages
+      yum:
+        name:
+          - epel-release
+          - python-pip
+        state: latest
+      when: ansible_python.version.major == 2
+
+    - name: Install required Python package (Python 3 pymysql)
+      package:
+        name: MySQL-python
+        state: present
+      when: ansible_python.version.major == 2
+
+    - name: Install required Python package (Python 3 setuptools)
+      package:
+        name: python3-setuptools
+        state: present
+      when: ansible_python.version.major == 3
+
+    - name: Install required Python package (Python 2 setuptools)
+      package:
+        name: python-setuptools
+        state: present
+      when: ansible_python.version.major == 2
+
+    - name: Install required Python MySQL module (Python 3)
+      pip:
+        name: pymysql
+        state: present
+      when: ansible_python.version.major == 3
+
+    - name: Install required Python MySQL module (Python 2)
+      pip:
+        name: MySQL-python
+        state: present
+      when: ansible_python.version.major == 2
+
+- name: Run MySQL Secure Installation
+  hosts: 192.168.0.22
+  become: true
+
+  vars:
+    mysql_root_password: password
+    root: password
+
+  tasks:
+    - name: Install expect package (if needed)
+      package:
+        name: expect
+        state: present
+
+    - name: Run mysql_secure_installation
+      shell: mysql_secure_installation
+      args:
+        stdin: |  
+          - 'Enter current password for root (enter for none):': "password"
+          - 'Set root password? [Y/n]': "Y"
+          - 'New password:': "{{ root }}"
+          - 'Re-enter new password:': "{{ password }}"
+          - 'Remove anonymous users? [Y/n]': "Y"
+          - 'Disallow root login remotely? [Y/n]': "Y"
+          - 'Remove test database and access to it? [Y/n]': "Y"
+          - 'Reload privilege tables now? [Y/n]': "Y"
+
+

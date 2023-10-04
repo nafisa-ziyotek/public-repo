@@ -1,0 +1,84 @@
+---
+- name: Install and Configure NFS
+  hosts: nfs
+  become: true
+  tasks:
+    - name: Install NFS packages
+      yum:
+        name:
+          - epel-release
+          - nfs-utils  
+          - autofs
+        state: present
+
+    - name: Enable and start services
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      with_items:
+        - rpcbind
+        - nfs-server
+        - nfs-lock
+        - nfs-idmap
+        - autofs
+
+    - name: Create directory #for nfs
+      file:
+        path: /var/nfs/nfs
+        state: directory
+        mode: '0755'
+
+    - name: Create directory #for autofs
+      file:
+        path: /var/nfs/autofs
+        state: directory
+        mode: '0755'
+
+    - name: Change ownership
+      file:
+        path: /var/nfs
+        state: directory
+        owner: nfsnobody
+        group: nfsnobody
+        mode: '0755'
+
+    - name: Export to all clients
+      lineinfile:
+        path: /etc/exports
+        line: "/var/nfs/nfs *(rw,sync)\n/var/nfs/autofs"
+        create: yes
+        create: yes
+        state: present
+      notify: Restart NFS
+
+    - name: Make changes
+      command: exportfs -av
+
+    - name: Disable SELinux temporarily (until next reboot)
+      selinux:
+        policy: targeted
+        state: disabled
+
+    - name: Set SELinux state to permissive in the current session
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Add NFS firewall rules
+      firewalld:
+        service: "{{ item }}"
+        permanent: yes
+        state: enabled
+      with_items:
+        - mountd
+        - rpc-bind
+        - nfs
+
+    - name: Reload firewall rules
+      command: firewall-cmd --reload
+
+  handlers:
+    - name: Restart NFS
+      service:
+        name: nfs
+        state: restarted

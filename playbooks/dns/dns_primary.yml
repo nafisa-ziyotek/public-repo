@@ -1,0 +1,82 @@
+---
+- name: Install bind bind-utils ntp
+  hosts: dns_primary
+  become: true
+  tasks:
+    - name: Install required packages
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - bind-utils
+        - bind
+        - ntp
+
+    - name: Start and enable named service
+      systemd:
+        name: named
+        state: started
+        enabled: yes
+
+    - name: Ensure named directory exists
+      file:
+        path: /var/named
+        state: directory
+
+    - name: Create ziyotek.local forward lookup zone file
+      file:
+        path: /var/named/ziyotek.flz
+        state: touch
+
+    - name: Create 0.168.192.in-addr.arpa reverse lookup zone file
+      file:
+        path: /var/named/ziyotek.rlz
+        state: touch
+
+    - name: Copy named.conf file
+      copy:
+        src: conf_primary.j2
+        dest: /etc/named.conf
+      ignore_errors: yes
+
+    - name: Copy named.loopback to ziyotek.rlz
+      command: cp -p /var/named/named.loopback /var/named/ziyotek.rlz
+      ignore_errors: yes
+
+    - name: Configure DNS Servers
+      template:
+        src: resolv.conf.j2
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: '0644'    
+    
+    - name: Disable SELinux temporarily (until next reboot)
+      selinux:
+        policy: targeted
+        state: disabled
+
+    - name: Set SELinux state to permissive in the current session
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Add TCP port 53 to Firewalld
+      ansible.builtin.command: firewall-cmd --permanent --add-port=53/tcp
+      async: 600
+      poll: 0
+      ignore_errors: yes  # To ignore errors if the rule already exists
+      become: yes
+
+    - name: Add UDP port 53 to Firewalld
+      ansible.builtin.command: firewall-cmd --permanent --add-port=53/udp
+      async: 600
+      poll: 0
+      ignore_errors: yes  # To ignore errors if the rule already exists
+      become: yes
+
+    - name: Reload Firewalld
+      ansible.builtin.command: firewall-cmd --reload
+      async: 600
+      poll: 0
+      become: yes
+

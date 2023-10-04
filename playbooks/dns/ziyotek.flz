@@ -1,0 +1,51 @@
+$TTL    1D
+@       IN      SOA     dns1-12.ziyotek.local. root.dns1-12.ziyotek.local. (
+                        2017100100      ; Serial
+                        1D              ; Refresh
+                        1H              ; Retry
+                        1W              ; Expire
+                        3H )            ; minimum
+
+; name servers NS records
+            IN      NS      dns1-12.ziyotek.local.
+            IN      NS      dns2-13.ziyotek.local.
+
+; name servers A records
+dns1-12   IN      A       192.168.0.12
+dns2-13   IN      A       192.168.0.13
+
+; servers
+dns1          IN      CNAME   dns1-12.ziyotek.local.
+dns2          IN      CNAME   dns2-13.ziyotek.local.
+ntp1-10		IN	A	192.168.0.10
+ntp1				IN	CNAME	ntp1-10.ziyotek.local.
+ntp2-11		IN	A	192.168.0.11
+ntp2		IN	CNAME	ntp2-11.ziyotek.local.
+ftp-14		IN	A	192.168.0.14
+ftp		IN	CNAME	ftp-14.ziyotek.local.
+samba-15		IN	A	192.168.0.15
+samba		IN	CNAME	samba-15.ziyotek.local.
+nfs-autofs-16		IN	A	192.168.0.16
+nfs		IN	CNAME	nfs-autofs-16.ziyotek.local.
+ansible-17		IN	A	192.168.0.17
+ansible		IN	CNAME	ansible-17.ziyotek.local.
+web1-18		IN	A	192.168.0.18
+web1		IN	CNAME	web1-18.ziyotek.local.
+web2-19		IN	A	192.168.0.19
+web2		IN	CNAME	web2-19.ziyotek.local.
+web3-20		IN	A	192.168.0.20
+web3		IN	CNAME	web3-20.ziyotek.local.
+load-21		IN	A	192.168.0.21
+load		IN	CNAME	load-21.ziyotek.local.
+db-22		IN	A	192.168.0.22
+db		IN	CNAME	db-22.ziyotek.local.
+nagios-23		IN	A	192.168.0.23
+nagios		IN	CNAME	nagios-23.ziyotek.local.
+ldap-24		IN	A	192.168.0.24
+ldap		IN	CNAME	ldap-24.ziyotek.local.
+docker-25		IN	A	192.168.0.25
+docker		IN	CNAME	docker-25.ziyotek.local.
+dworker1-26		IN	A	192.168.0.26
+dworker1		IN	CNAME	dworker1-26.ziyotek.local.
+dworker2-27		IN	A	192.168.0.27
+dworker2		IN	CNAME	dworker2-27.ziyotek.local.

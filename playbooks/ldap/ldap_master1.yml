@@ -1,0 +1,160 @@
+---
+- name: Install and configure OpenLDAP
+  hosts: devx-ldap001
+  become: yes
+  tasks:
+    - name: Install required packages
+      yum:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - openldap
+        - openldap-clients
+        - openldap-servers
+        - openssl
+        - httpd
+
+    - name: Start slapd service
+      systemd:
+        name: slapd
+        state: started
+        enabled: yes
+
+    - name: Allow necessary ports in firewall
+      firewalld:
+        port: "{{ item }}"
+        permanent: yes
+        state: enabled
+      with_items:
+        - 389/tcp
+        - 636/tcp
+        - 9830/tcp
+
+    - name: Reload firewall
+      command: firewall-cmd --reload
+
+    - name: Create olcRootDN Account as Admin
+      command: slappasswd
+      register: root_password_output
+      ignore_errors: yes
+      args:
+        stdin: password
+
+    - name: Create olcSuffix Domain Name
+      template:
+        src: hdb.ldif.j2
+        dest: /tmp/hdb.ldif
+
+    - name: Apply olcSuffix, olcRootDN, and olcRootPW changes
+      command: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/hdb.ldif
+      when: root_password_output.stdout is defined
+
+    - name: Specify Monitoring privileges
+      template:
+        src: monitor.ldif.j2
+        dest: /tmp/monitor.ldif
+
+    - name: Apply monitoring privileges changes
+      command: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/monitor.ldif
+      when: root_password_output.stdout is defined
+
+    - name: Configure OpenLDAP for SSL/TLS
+      command: openssl genrsa -out /etc/openldap/certs/CA.key 2048
+      args:
+        creates: /etc/openldap/certs/CA.key
+
+    - name: Create self-signed root certificate
+      command: openssl req -x509 -new -nodes -key /etc/openldap/certs/CA.key -sha256 -days 1024 -out /etc/openldap/certs/CA.crt
+      args:
+        creates: /etc/openldap/certs/CA.crt
+      vars:
+        ca_subject: "/C=US/ST=Virginia/L=Vienna/O=Ziyotek Institute/OU=IT/CN=Ziyotek Root CA/emailAddress=admin@ziyotek.com"
+
+    - name: Create LDAP server private key
+      command: openssl genrsa -out /etc/openldap/certs/ldap.key 2048
+      args:
+        creates: /etc/openldap/certs/ldap.key
+
+    - name: Create certificate signing request for LDAP server
+      command: openssl req -new -key /etc/openldap/certs/ldap.key -out /etc/openldap/certs/ldap.csr
+      args:
+        creates: /etc/openldap/certs/ldap.csr
+      vars:
+        ldap_server_subject: "/C=US/ST=Virginia/L=Vienna/O=Ziyotek Institute/OU=IT/CN=devx-ldap001.ziyotek.local/emailAddress=admin@ziyotek.com"
+
+    - name: Sign LDAP server certificate with custom CA
+      command: openssl x509 -req -in /etc/openldap/certs/ldap.csr -CA /etc/openldap/certs/CA.crt -CAkey /etc/openldap/certs/CA.key -CAcreateserial -out /etc/openldap/certs/ldap.crt -days 1460 -sha256
+      args:
+        creates: /etc/openldap/certs/ldap.crt
+
+    - name: Apply TLS certificate configuration
+      template:
+        src: key.ldif.j2
+        dest: /tmp/key.ldif
+
+    - name: Apply TLS certificate changes
+      command: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/key.ldif
+      when: root_password_output.stdout is defined
+
+    - name: Start Apache for CA certificate download
+      systemd:
+        name: httpd
+        state: started
+
+    - name: Copy CA certificate to web directory
+      copy:
+        src: /etc/openldap/certs/CA.crt
+        dest: /var/www/html/
+
+    - name: Restart slapd service
+      systemd:
+        name: slapd
+        state: restarted
+      when: root_password_output.stdout is defined
+
+    - name: Test LDAP configuration
+      command: slaptest -u
+      when: root_password_output.stdout is defined
+
+    - name: Create Base LDAP Structure in base.ldif
+      template:
+        src: base.ldif.j2
+        dest: /tmp/base.ldif
+
+    - name: Import Base Structure
+      command: ldapadd -x -W -D "cn=admin,dc=ziyotek,dc=local" -f /tmp/base.ldif
+      when: root_password_output.stdout is defined
+
+    - name: Verify LDAP Search
+      command: ldapsearch -x -b "dc=ziyotek,dc=local"
+      when: root_password_output.stdout is defined
+
+    - name: Add LDAP schemas (cosine, nis, inetorgperson)
+      command: ldapadd -Y EXTERNAL -H ldapi:/// -f /etc/openldap/schema/{{ item }}.ldif
+      with_items:
+        - cosine
+        - nis
+        - inetorgperson
+
+    - name: Create LDIF file for New User
+      template:
+        src: user.ldif.j2
+        dest: /tmp/user.ldif
+
+    - name: Add LDAP User
+      command: ldapadd -x -W -D "cn=admin,dc=ziyotek,dc=local" -f /tmp/user.ldif
+      when: root_password_output.stdout is defined
+
+    - name: Assign Password to LDAP User
+      command: ldappasswd -s password -W -D "cn=admin,dc=ziyotek,dc=local" -x "uid=nima,ou=users,dc=ziyotek,dc=local"
+      when: root_password_output.stdout is defined
+
+    - name: Create LDIF file for New Group
+      template:
+        src: group.ldif.j2
+        dest: /tmp/group.ldif
+
+    - name: Add LDAP Group
+      command: ldapadd -x -W -D "cn=admin,dc=ziyotek,dc=local" -f /tmp/group.ldif
+      when: root_password_output.stdout is defined
+

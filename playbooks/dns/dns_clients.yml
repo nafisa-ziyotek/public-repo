@@ -1,0 +1,34 @@
+---
+- name: Install and Configure DNS Clients
+  hosts: dns_clients
+  become: yes
+
+  vars:
+    dns_servers:
+      - 192.168.0.12
+      - 192.168.0.13
+    domain_search: ziyotek.local
+
+  tasks:
+    - name: Install Bind Utilities
+      yum:
+        name: bind-utils
+        state: latest
+
+    - name: Configure DNS Servers
+      template:
+        src: resolv.conf.j2
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: '0644'
+
+#    - name: Restart Network Service
+#      service:
+#        name: network
+#        state: restarted
+
+#    - name: Restart NetworkManager Service
+#      service:
+#        name: NetworkManager
+#        state: restarted

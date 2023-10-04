@@ -1,0 +1,53 @@
+---
+- name: Install and configure phpLDAPadmin
+  hosts: ldap_server  # Replace with the hostname or IP address of your LDAP server
+  become: yes
+  tasks:
+    - name: Install epel-release
+      yum:
+        name: epel-release
+        state: present
+
+    - name: Install phpldapadmin and httpd
+      yum:
+        name:
+          - phpldapadmin
+          - httpd
+        state: present
+
+    - name: Configure phpLDAPadmin
+      blockinfile:
+        path: /etc/phpldapadmin/config.php
+        block: |
+          $servers->setValue('server','base',array('dc=ziyotek,dc=local'));
+          $servers->setValue('login','bind_id','cn=admin,dc=ziyotek,dc=local');
+          $servers->setValue('login','attr','dn');
+          //$servers->setValue('login','attr','uid');
+          $servers->setValue('auto_number','min',array('uidNumber'=>10000,'gidNumber'=>5000));
+
+    - name: Configure httpd for phpLDAPadmin
+      blockinfile:
+        path: /etc/httpd/conf.d/phpldapadmin.conf
+        block: |
+          Alias /phpldapadmin /usr/share/phpldapadmin/htdocs
+          Alias /ldapadmin /usr/share/phpldapadmin/htdocs
+          
+          <Directory /usr/share/phpldapadmin/htdocs>
+            <IfModule mod_authz_core.c>
+              Require local
+              Require ip 192.168.1.0/24  # Replace with your IP range
+            </IfModule>
+            <IfModule !mod_authz_core.c>
+              Order Deny,Allow
+              Deny from all
+              Allow from 127.0.0.1
+              Allow from ::1
+            </IfModule>
+          </Directory>
+
+    - name: Restart httpd service
+      systemd:
+        name: httpd
+        state: restarted
+        enabled: yes
+
