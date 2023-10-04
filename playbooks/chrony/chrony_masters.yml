@@ -1,0 +1,43 @@
+---
+- name: Install and configure Chrony time server
+  hosts: chrony_masters  
+  become: yes
+
+  tasks:
+    - name: Install Chrony package
+      yum:
+        name: chrony
+        state: present
+
+    - name: Configure Chrony
+      copy:
+        src: chrony_masters.conf.j2
+        dest: /etc/chrony.conf
+
+    - name: Enable and Start Chrony Service
+      systemd:
+        name: chronyd
+        enabled: yes
+        state: started
+
+    - name: Disable SELinux temporarily (until next reboot)
+      selinux:
+        policy: targeted
+        state: disabled
+
+    - name: Set SELinux state to permissive in the current session
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Add NTP service to Firewalld
+      ansible.builtin.firewalld:
+        service: ntp
+        permanent: yes
+        state: enabled
+      become: yes
+
+    - name: Reload Firewalld
+      ansible.builtin.service:
+        name: firewalld
+        state: reloaded
+      become: yes

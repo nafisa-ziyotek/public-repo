@@ -1,0 +1,179 @@
+---
+- name: LDAP Server Setup
+  hosts: ldap
+  become: yes
+  tasks:
+    - name: Disable SELinux temporarily (until next reboot)
+      selinux:
+        policy: targeted
+        state: disabled
+
+    - name: Set SELinux state to permissive in the current session
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Install required packages
+      yum:
+        name:
+          - openldap
+          - openldap-clients
+          - openldap-servers
+          - openssl
+          - httpd
+        state: present
+
+    - name: Allow necessary ports in firewall
+      firewalld:
+        port: "{{ item }}"
+        permanent: yes
+        state: enabled
+      with_items:
+        - 389/tcp
+        - 636/tcp
+        - 9830/tcp
+
+    - name: Reload firewall
+      command: firewall-cmd --reload
+
+    - name: Install required Python library pexpect
+      yum:
+        name: pexpect
+        state: present
+      tags: install_pexpect
+
+    - name: Install setuptools using yum
+      yum:
+        name: python-setuptools
+        state: present
+      tags: install_setuptools
+
+    - name: Install pip for Python 2
+      yum:
+        name: python2-pip
+        state: present
+      tags: install_pip
+
+    - name: Update pexpect library
+      pip:
+        name: pexpect
+        state: latest
+      tags: update_pexpect
+
+    - name: Create olcRootDN Account as Admin
+      expect:
+        command: slappasswd
+        responses:
+          "New password:": "password\n"
+          "Re-enter new password:": "password\n"
+      register: ldap_admin_password
+
+    - name: Set root_passwd_output variable
+      set_fact:
+        root_passwd_output: "{{ ldap_admin_password.stdout }}"
+
+    - name: Save debug output to a file
+      copy:
+        content: "{{ root_passwd_output }}"
+        dest: /root/ldap_passwd.txt  # Specify the path where you want to save the output
+
+    - name: Fetch debug output from remote host to localhost
+      fetch:
+        src: /root/ldap_passwd.txt
+        dest: /ansible/playbooks/ldap/ldap_user_passwd
+        flat: yes  # Flatten the directory structure on the local host
+
+    - name: Run script
+      shell: bash /ansible/playbooks/ldap/passwd.sh
+      delegate_to: localhost
+
+    - name: Verify LDAP service status
+      systemd:
+        name: slapd.service
+      register: slapd_status
+      tags: verify_service
+
+    - name: Copy LDAP configuration directory to /tmp
+      command: cp -r /etc/openldap/slapd.d/cn=config /tmp
+      tags: copy_config_to_tmp
+
+    - name: Edit the LDAP database configuration file
+      copy:
+        src: hdb.ldif.j2
+        dest: /etc/openldap/slapd.d/cn=config/olcDatabase={2}hdb.ldif
+      tags: edit_ldap_config
+
+    - name: Edit LDAP monitor configuration file
+      copy:
+        src: monitor.ldif.j2
+        dest: /etc/openldap/slapd.d/cn=config/olcDatabase={1}monitor.ldif
+      tags: edit_monitor_config
+
+    - name: Copy DB_CONFIG.example
+      command: cp /usr/share/openldap-servers/DB_CONFIG.example /var/lib/ldap/DB_CONFIG
+      args:
+        creates: /var/lib/ldap/DB_CONFIG
+      tags: copy_db_config
+
+    - name: Start slapd service
+      systemd:
+        name: slapd
+        state: started
+        enabled: yes
+
+    - name: Add LDAP schemas (cosine, nis, inetorgperson)
+      command: ldapadd -Y EXTERNAL -H ldapi:/// -f /etc/openldap/schema/{{ item }}.ldif
+      with_items:
+        - cosine
+        - nis
+        - inetorgperson
+
+    - name: Create base.ldif file
+      copy:
+        content: |
+          dn: dc=ziyotek,dc=local
+          objectClass: top
+          objectClass: dcObject
+          objectclass: organization
+          o: ziyotek com
+          dc: ziyotek
+
+          dn: cn=student,dc=ziyotek,dc=local
+          objectClass: organizationalRole
+          cn: Manager
+          description: Directory Manager
+
+          dn: ou=People,dc=ziyotek,dc=local
+          objectClass: organizationalUnit
+          ou: People
+
+          dn: ou=Group,dc=ziyotek,dc=local
+          objectClass: organizationalUnit
+          ou: Group
+        dest: /root/base.ldif
+      tags: create_base_ldif
+
+    - name: Create LDAP base object
+      command: ldapadd -x -W -D "cn=student,dc=ziyotek,dc=local" -f /root/base.ldif
+      tags: create_base_object
+
+    - name: Create users and groups
+      command: |
+        ./migrate_passwd.pl /root/passwd /root/users.ldif
+        ./migrate_group.pl /root/group /root/groups.ldif
+      args:
+        chdir: /usr/share/migrationtools/
+        creates: /root/users.ldif
+      tags: create_users_and_groups
+
+    - name: Export users to LDAP
+      command: ldapadd -x -W -D "cn=student,dc=ziyotek,dc=local" -f /root/users.ldif
+      tags: export_users_to_ldap
+
+    - name: Export groups to LDAP
+      command: ldapadd -x -W -D "cn=student,dc=ziyotek,dc=local" -f /root/groups.ldif
+      tags: export_groups_to_ldap
+
+    - name: Restart slapd service
+      systemd:
+        name: slapd
+        state: restarted

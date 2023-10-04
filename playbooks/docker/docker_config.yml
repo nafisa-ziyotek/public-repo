@@ -1,0 +1,92 @@
+---
+- name: Configure Docker Swarm
+  hosts: docker
+  become: true
+
+  tasks:
+    - name: Install Docker
+      yum:
+        name: docker
+        state: latest
+
+    - name: Start and Enable Docker
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+ - name: Check if daemon.json exists
+      stat:
+        path: /etc/docker/daemon.json
+      register: daemon_json_check
+
+    - name: Create daemon.json file if not exists
+      copy:
+        content: |
+          {
+            "live-restore": false
+          }
+        dest: /etc/docker/daemon.json
+      when: not daemon_json_check.stat.exists
+
+    - name: Initialize Docker Swarm
+      shell: docker swarm init --advertise-addr {{ ansible_host }}
+      args:
+        executable: /bin/bash
+      register: swarm_init
+      changed_when: "'Swarm initialized' in swarm_init.stdout"
+
+   - name: Disable SELinux temporarily (until next reboot)
+      selinux:
+        policy: targeted
+        state: disabled
+
+    - name: Set SELinux state to permissive in the current session
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Stop firewalld service
+      service:
+        name: firewalld
+        state: stopped
+
+    - name: Disable firewalld service at boot
+      systemd:
+        name: firewalld
+        enabled: no
+
+- name: Join Worker Nodes
+  hosts: dworkers
+  become: true
+
+  tasks:
+    - name: Get Join Token
+      shell: docker swarm join-token worker -q
+      args:
+        executable: /bin/bash
+      register: join_token
+
+    - name: Join Worker Node to Swarm
+      shell: docker swarm join --token {{ join_token.stdout }} {{ hostvars['manager'][ansible_default_ipv4]['address'] }}:2377
+      args:
+        executable: /bin/bash
+      changed_when: false  # Joining a node doesn't change state, so we mark it as unchanged
+
+    - name: Disable SELinux temporarily (until next reboot)
+      selinux:
+        policy: targeted
+        state: disabled
+
+    - name: Set SELinux state to permissive in the current session
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Stop firewalld service
+      service:
+        name: firewalld
+        state: stopped
+
+    - name: Disable firewalld service at boot
+      systemd:
+        name: firewalld
+        enabled: no

@@ -1,0 +1,33 @@
+$TTL   1D
+@       IN      SOA     dns1-12.ziyotek.local. root.dns1-12.ziyotek.local. (
+                        2017100100      ; serial
+                        1D              ; refresh
+                        1H              ; retry
+                        1W              ; expire
+                        3H )            ; minimum
+
+; name servers NS records
+           IN      NS      dns1-12.ziyotek.local.
+           IN      NS      dns2-13.ziyotek.local.
+
+; name servers PTR records
+12          IN      PTR     dns1-12.ziyotek.local.
+13          IN      PTR     dns2-13.ziyotek.local.
+
+; servers
+10	   IN	   PTR	   ntp1-10.ziyotek.local.
+11	   IN	   PTR	   ntp2-11.ziyotek.local.
+14	   IN	   PTR	   ftp-14.ziyotek.local.
+15	   IN	   PTR	   samba-15.ziyotek.local.
+16	   IN	   PTR	   nfs-autofs-16.ziyotek.local.
+17	   IN	   PTR	   ansible-17.ziyotek.local.
+18	   IN	   PTR	   web1-18.ziyotek.local.
+19	   IN	   PTR	   web2-19.ziyotek.local.
+20	   IN	   PTR	   web3-20.ziyotek.local.
+21	   IN	   PTR	   load-21.ziyotek.local.
+22	   IN	   PTR	   db-22.ziyotek.local.
+23	   IN	   PTR	   nagios-23.ziyotek.local.
+24	   IN	   PTR	   ldap-24.ziyotek.local.
+25	   IN	   PTR	   docker-25.ziyotek.local.
+26	   IN	   PTR	   dworker1-26.ziyotek.local.
+27	   IN	   PTR	   dworker2-27.ziyotek.local.

@@ -1,0 +1,164 @@
+---
+- name: Install and configure OpenLDAP
+  hosts: ldap
+  become: yes
+  tasks:
+    - name: Disable SELinux temporarily (until next reboot)
+      selinux:
+        policy: targeted
+        state: disabled
+
+    - name: Set SELinux state to permissive in the current session
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Install required packages
+      yum:
+        name:
+          - openldap
+          - openldap-clients
+          - openldap-servers
+          - openssl
+          - httpd
+        state: present
+
+    - name: Start slapd service
+      systemd:
+        name: slapd
+        state: started
+        enabled: yes
+
+    - name: Allow necessary ports in firewall
+      firewalld:
+        port: "{{ item }}"
+        permanent: yes
+        state: enabled
+      with_items:
+        - 389/tcp
+        - 636/tcp
+        - 9830/tcp
+
+    - name: Reload firewall
+      command: firewall-cmd --reload
+
+    - name: Install required Python library pexpect
+      yum:
+        name: pexpect
+        state: present
+      tags: install_pexpect
+
+    - name: Install setuptools using yum
+      yum:
+        name: python-setuptools
+        state: present
+      tags: install_setuptools
+
+    - name: Install pip for Python 3
+      yum:
+        name: python3-pip
+        state: present
+      tags: install_pip
+
+    - name: Update pexpect library
+      command: pip3 install pexpect
+      tags: update_pexpect
+
+    - name: Create olcRootDN Account as Admin
+      expect:
+        command: slappasswd
+        responses:
+          "New password:": "password\n"
+          "Re-enter new password:": "password\n"
+      register: slappasswd_output
+      ignore_errors: yes
+      vars:
+        ansible_python_interpreter: /usr/bin/python3
+
+
+    - name: Set root_passwd_output variable
+      set_fact:
+        root_passwd_output: "{{ slappasswd_output.stdout }}"
+      
+    - name: Save debug output to a file
+      copy:
+        content: "{{ root_passwd_output }}"
+        dest: /root/ldap_passwd.txt  # Specify the path where you want to save the output    
+
+    - name: Fetch debug output from remote host to localhost
+      fetch:
+        src: /root/ldap_passwd.txt
+        dest: /ansible/playbooks/ldap/ldap_user_passwd
+        flat: yes  # Flatten the directory structure on the local host
+
+    - name: Run script 
+      shell: bash /ansible/playbooks/ldap/passwd.sh
+      delegate_to: localhost 
+
+    - name: Copy LDAP configuration directory to /tmp
+      command: cp -r /etc/openldap/slapd.d/cn=config /tmp
+      tags: copy_config_to_tmp
+
+    - name: Edit the LDAP database configuration file
+      copy:
+        src: hdb.ldif.j2
+        dest: /etc/openldap/slapd.d/cn=config/olcDatabase={2}hdb.ldif
+      tags: edit_ldap_config
+
+    - name: Edit LDAP monitor configuration file
+      copy:
+        src: monitor.ldif.j2
+        dest: /etc/openldap/slapd.d/cn=config/olcDatabase={1}monitor.ldif
+      tags: edit_monitor_config
+
+    - name: Restart slapd service
+      systemd:
+        name: slapd
+        state: restarted
+      when: root_password_output.stdout is defined
+
+    - name: Test LDAP configuration
+      command: slaptest -u
+      when: root_password_output.stdout is defined
+
+    - name: Create Base LDAP Structure in base.ldif
+      template:
+        src: base.ldif.j2
+        dest: /root/base.ldif
+
+    - name: Import Base Structure
+      command: ldapadd -x -W -D "cn=admin,dc=ziyotek,dc=local" -f /root/base.ldif
+      when: root_password_output.stdout is defined
+
+    - name: Verify LDAP Search
+      command: ldapsearch -x -b "dc=ziyotek,dc=local"
+      when: root_password_output.stdout is defined
+
+    - name: Add LDAP schemas (cosine, nis, inetorgperson)
+      command: ldapadd -Y EXTERNAL -H ldapi:/// -f /etc/openldap/schema/{{ item }}.ldif
+      with_items:
+        - cosine
+        - nis
+        - inetorgperson
+
+    - name: Create LDIF file for New User
+      template:
+        src: user.ldif.j2
+        dest: /root/user.ldif
+
+    - name: Add LDAP User
+      command: ldapadd -x -W -D "cn=admin,dc=ziyotek,dc=local" -f /root/user.ldif
+      when: root_password_output.stdout is defined
+
+    - name: Assign Password to LDAP User
+      command: ldappasswd -s password -W -D "cn=admin,dc=ziyotek,dc=local" -x "uid=nima,ou=users,dc=ziyotek,dc=local"
+      when: root_password_output.stdout is defined
+
+    - name: Create LDIF file for New Group
+      template:
+        src: group.ldif.j2
+        dest: /root/group.ldif
+
+    - name: Add LDAP Group
+      command: ldapadd -x -W -D "cn=admin,dc=ziyotek,dc=local" -f /root/group.ldif
+      when: root_password_output.stdout is defined
+

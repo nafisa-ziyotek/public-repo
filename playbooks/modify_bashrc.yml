@@ -1,0 +1,14 @@
+---
+- name: Add line to /etc/bashrc and source it
+  hosts: all_servers
+  become: yes
+
+  tasks:
+    - name: Add line to /etc/bashrc
+      lineinfile:
+        path: /etc/bashrc
+        line: 'export PS1="\n\[\e[31m\][\u@\[\e[1;34m\]\h \w]\[\e[m\]\\$ "'
+        state: present
+
+    - name: Source /etc/bashrc
+      shell: source /etc/bashrc

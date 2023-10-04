@@ -1,0 +1,14 @@
+---
+- hosts: all_servers
+  become: yes
+  gather_facts: yes
+  tasks:
+    - name: Check installed packages
+      yum:
+        list: installed
+      register: installed_packages
+
+    - name: Display installed packages
+      debug:
+        var: installed_packages
+

@@ -1,0 +1,57 @@
+---
+- name: Configure Samba Client
+  hosts: samba_clients
+  become: yes
+
+  tasks:
+    - name: Install Samba client and cifs-utils
+      yum:
+        name:
+          - samba-client
+          - cifs-utils
+        state: present
+
+    - name: List Available Shares
+      command: smbclient -U admin -L 192.168.0.15
+      become_user: root
+      register: smb_list
+      ignore_errors: yes
+
+    - name: Create the shared directory
+      file:
+        path: /client
+        state: directory
+        mode: '0777'
+
+    - name: Mount the Samba Master Directory
+      command: >
+        mount -t cifs //192.168.0.15/sambashare /client/ -o user=admin,password=password
+      become_user: root
+      ignore_errors: yes
+      when: "'sambashare' in smb_list.stdout"
+
+    - name: Add Samba share to /etc/fstab
+      lineinfile:
+        path: /etc/fstab
+        line: "//192.168.0.15/sambashare /client/ cifs user=admin,password=password 0 0"
+      become_user: root
+      ignore_errors: yes
+      when: "'sambashare' in smb_list.stdout"
+
+    - name: Mount shares defined in /etc/fstab
+      command: mount -a
+      become_user: root
+
+  handlers:
+    - name: Reboot server to apply changes
+      command: reboot
+      async: 1
+      poll: 0
+      become: yes
+      when: "'sambashare' in smb_list.stdout"
+
+    - name: Unmount Samba share if not listed
+      command: umount /client
+      become_user: root
+      when: "'sambashare' not in smb_list.stdout"
+

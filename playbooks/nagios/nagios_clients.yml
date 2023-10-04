@@ -1,0 +1,37 @@
+- name: Install Nagios NRPE on Client Machines
+  hosts: nagios_clients   
+  become: true
+
+  tasks:
+    - name: Install EPEL Release
+      yum:
+        name: epel-release
+        state: present
+
+    - name: Install NRPE
+      yum:
+        name: nrpe
+        state: present
+
+    - name: Install Nagios Plugins All
+      yum:
+        name: nagios-plugins-all
+        state: present
+
+    - name: Configure NRPE
+      lineinfile:
+        path: "/etc/nagios/nrpe.cfg"
+        regexp: "^allowed_hosts="
+        line: "allowed_hosts=127.0.0.1,192.168.0.23"
+        state: present
+
+    - name: Enable and start NRPE service
+      systemd:
+        name: nrpe
+        state: started
+        enabled: yes
+
+    - name: Restart NRPE
+      service:
+        name: nrpe
+        state: restarted

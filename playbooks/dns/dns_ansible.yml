@@ -1,0 +1,21 @@
+---
+- name: Add records to files
+  hosts: dns_primary
+  gather_facts: yes
+  become: true
+  tasks:
+    - name: Copy file ziyotek.flz
+      ansible.builtin.copy:
+        src: /ansible/playbooks/dns/ziyotek.flz
+        dest: /var/named/ziyotek.flz
+
+    - name: Copy file ziyotek.rlz
+      ansible.builtin.copy:
+        src: /ansible/playbooks/dns/ziyotek.rlz
+        dest: /var/named/ziyotek.rlz
+
+    - name: Restart service
+      service:
+        name: named
+        state: restarted
+

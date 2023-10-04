@@ -1,0 +1,17 @@
+---
+- name: Copy Nagios Client Files
+  hosts: nagios
+  become: true
+
+  tasks:
+    - name: Copy files
+      copy:
+        src: "{{ item }}"
+        dest: "/usr/local/nagios/etc/servers/"
+      with_fileglob:
+        - "/ansible/playbooks/nagios/clients/*"      
+
+    - name: Restart Nagios service
+      service:
+        name: nagios
+        state: restarted

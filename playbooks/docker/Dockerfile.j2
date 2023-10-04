@@ -1,0 +1,17 @@
+# Use the official CentOS 7 base image
+FROM centos:7
+
+# Install necessary packages (httpd, php, mysql, php-mysql)
+RUN yum -y install httpd php php-mysql mysql && yum clean all
+
+# Download and extract the application files
+RUN curl -o /tmp/lab-app.tgz https://aws-tc-largeobjects.s3-us-west-2.amazonaws.com/CUR-TF-200-ACACAD/studentdownload/lab-app.tgz && tar -xzf /tmp/lab-app.tgz -C /var/www/html
+
+# Set ownership of the configuration file
+RUN chown apache:root /var/www/html/rds.conf.php
+
+# Expose port 80 for HTTP traffic
+EXPOSE 80
+
+# Start Apache service when the container launches
+CMD ["/usr/sbin/httpd", "-D", "FOREGROUND"]

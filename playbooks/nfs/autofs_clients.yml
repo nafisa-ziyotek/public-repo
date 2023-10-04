@@ -1,0 +1,29 @@
+---
+- name: Install and Configure AutoFS Clients
+  hosts: autofs_clients
+  become: yes
+
+  tasks:
+    - name: Install autofs package
+      ansible.builtin.package:
+        name: autofs
+        state: present
+
+    - name: Configure auto.master
+      ansible.builtin.copy:
+        content: |
+          /autofs /etc/auto.mount
+        dest: /etc/auto.master
+      notify: Restart autofs
+
+    - name: Create auto.mount file
+      ansible.builtin.copy:
+        content: |
+          * -rw 192.168.0.16:/var/nfs/nfs/&
+        dest: /etc/auto.mount
+
+  handlers:
+    - name: Restart autofs
+      ansible.builtin.service:
+        name: autofs
+        state: restarted

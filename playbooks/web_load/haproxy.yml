@@ -1,0 +1,152 @@
+---
+- name: Install and Configure HAProxy 
+  hosts: haproxy
+  become: yes
+
+  tasks:
+    - name: Install HAProxy package
+      ansible.builtin.yum:
+        name: haproxy
+        state: present
+
+    - name: Backup original HAProxy configuration file
+      ansible.builtin.shell: mv /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.orig
+      ignore_errors: yes
+
+    - name: Create HAProxy configuration file
+      ansible.builtin.copy:
+        content: |
+          #---------------------------------------------------------------------
+          # Global settings
+          #---------------------------------------------------------------------
+          global
+              log         127.0.0.1 local2
+              chroot      /var/lib/haproxy
+              pidfile     /var/run/haproxy.pid
+              maxconn     4000
+              user        haproxy
+              group       haproxy
+              daemon
+              stats socket /var/lib/haproxy/stats
+
+          #---------------------------------------------------------------------
+          # common defaults
+          #---------------------------------------------------------------------
+          defaults
+              mode                    http
+              log                     global
+              option                  httplog
+              option                  dontlognull
+              option http-server-close
+              option forwardfor       except 127.0.0.0/8
+              option                  redispatch
+              retries                 3
+              timeout http-request    10s
+              timeout queue           1m
+              timeout connect         10s
+              timeout client          1m
+              timeout server          1m
+              timeout http-keep-alive 10s
+              timeout check           10s
+              maxconn                 3000
+
+          #---------------------------------------------------------------------
+          # HAProxy Monitoring Config
+          #---------------------------------------------------------------------
+          listen haproxy3-monitoring *:8080
+              mode http
+              option forwardfor
+              option httpclose
+              stats enable
+              stats show-legends
+              stats refresh 5s
+              stats uri /stats
+              stats realm Haproxy\ Statistics
+              stats auth student:password
+              stats admin if TRUE
+              default_backend app-main
+
+          #---------------------------------------------------------------------
+          # FrontEnd Configuration
+          #---------------------------------------------------------------------
+          frontend main
+              bind *:80
+              option http-server-close
+              option forwardfor
+              default_backend app-main
+
+          #---------------------------------------------------------------------
+          # BackEnd roundrobin as balance algorithm
+          #---------------------------------------------------------------------
+          backend app-main
+              balance roundrobin
+              server web1 192.168.0.18:80 check
+              server web2 192.168.0.19:80 check
+              server web3 192.168.0.20:80 check
+        dest: /etc/haproxy/haproxy.cfg
+      notify: Restart HAProxy
+
+    - name: Configure rsyslog for HAProxy
+      ansible.builtin.lineinfile:
+        path: /etc/rsyslog.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^#\\s*\$ModLoad imudp$', line: '$ModLoad imudp' }
+        - { regexp: '^#\\s*\$UDPServerRun 514$', line: '$UDPServerRun 514' }
+      notify: Restart rsyslog
+
+    - name: Create HAProxy configuration file for rsyslog
+      ansible.builtin.copy:
+        content: |
+          local2.=info     /var/log/haproxy-access.log
+          local2.notice    /var/log/haproxy-info.log
+        dest: /etc/rsyslog.d/haproxy.conf
+      notify: Restart rsyslog
+
+    - name: Disable SELinux temporarily (until next reboot)
+      selinux:
+        policy: targeted
+        state: disabled
+
+    - name: Set SELinux state to permissive in the current session
+      command: setenforce 0
+      ignore_errors: yes
+
+    - name: Allow TCP port 80
+      firewalld:
+        port: 80/tcp
+        permanent: yes
+        state: enabled
+
+    - name: Allow UDP port 80
+      firewalld:
+        port: 80/udp
+        permanent: yes
+        state: enabled
+
+    - name: Allow TCP port 8080
+      firewalld:
+        port: 8080/tcp
+        permanent: yes
+        state: enabled
+
+    - name: Allow UDP port 8080
+      firewalld:
+        port: 8080/udp
+        permanent: yes
+        state: enabled
+
+    - name: Reload firewall rules
+      command: firewall-cmd --reload
+
+  handlers:
+    - name: Restart HAProxy
+      ansible.builtin.systemd:
+        name: haproxy
+        state: restarted
+
+    - name: Restart rsyslog
+      ansible.builtin.systemd:
+        name: rsyslog
+        state: restarted

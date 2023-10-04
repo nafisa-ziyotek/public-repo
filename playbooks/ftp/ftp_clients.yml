@@ -1,0 +1,21 @@
+---
+- name: Install and Configure FTP Clients
+  hosts: ftp_clients
+  become: yes
+
+  tasks:
+    - name: Install FTP Client Tools
+      yum:
+        name: "{{ item }}"
+        state: latest
+      loop:
+        - ftp
+        - lftp
+
+    - name: Create Directory for FTP Downloads
+      file:
+        path: /ftp_downloads
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: '0755'
